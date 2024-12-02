@@ -12,7 +12,14 @@ import { RegisterUserDto } from "./dto/register-user.dto";
 import { LoginUserDto } from "./dto/login-user.dto";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
+import { userInfo } from "os";
+import { RequireLogin, UserInfo } from "src/custom.decorator";
+import { UserDetailVo } from "./vo/user-info.vo";
+import { UpdateUserPasswordDto } from "./dto/update-user-password.dto";
+import { RedisService } from "src/redis/redis.service";
+import { ApiBody, ApiResponse, ApiTags } from "@nestjs/swagger";
 
+@ApiTags("用户管理模块")
 @Controller("user")
 export class UserController {
   constructor(private readonly userService: UserService) {}
@@ -22,6 +29,16 @@ export class UserController {
   @Inject(ConfigService)
   private configService: ConfigService;
 
+  @Inject(RedisService)
+  private redisService: RedisService;
+
+  @ApiBody({ type: RegisterUserDto })
+  @ApiResponse({
+    status: 200,
+    description: "用户注册成功",
+    type: String,
+  })
+  @ApiResponse({ status: 401, description: "用户名已存在", type: String })
   @Post("register")
   async register(@Body() registerUser: RegisterUserDto) {
     return await this.userService.register(registerUser);
@@ -144,6 +161,46 @@ export class UserController {
     } catch (e) {
       throw new UnauthorizedException("token 已失效，请重新登录");
     }
+  }
+
+  // 查询用户信息
+  @Get("info")
+  @RequireLogin() // 登录验证装饰器
+  async info(@UserInfo("userId") userId: number) {
+    const user = await this.userService.findUserDetailById(userId);
+    const vo = new UserDetailVo();
+    vo.id = user.id;
+    vo.email = user.email;
+    vo.username = user.username;
+    vo.headPic = user.headPic;
+    vo.phoneNumber = user.phoneNumber;
+    vo.nickName = user.nickName;
+    vo.createTime = user.createTime;
+    vo.isFrozen = user.isFrozen;
+    return vo;
+  }
+
+  // 修改密码
+  @Post(["update_password", "admin/update_password"])
+  @RequireLogin()
+  async updatePassword(
+    @UserInfo("userId") userId: number,
+    @Body() passwordDto: UpdateUserPasswordDto
+  ) {
+    return await this.userService.updatePassword(userId, passwordDto);
+  }
+
+  // 发送邮件验证码
+  @Get("update_password/captcha")
+  async updatePasswordCaptcha(@Query("address") address: string) {
+    const code = Math.random().toString().slice(2, 8);
+
+    await this.redisService.set(
+      `update_password_captcha_${address}`,
+      code,
+      10 * 60
+    );
+    return `你的更改密码验证码是 ${code}`;
   }
 
   @Get("init-data")

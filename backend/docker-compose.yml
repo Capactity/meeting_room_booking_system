@@ -1,0 +1,33 @@
+version: "3.8"
+services:
+  # nest-app: 依赖 redis-container 和 mysql-container
+  nest-app:
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    depends_on:
+      - mysql-container
+      - redis-container
+    ports:
+      - 3005:3005
+    networks:
+      - common-network
+  mysql-container:
+    image: mysql
+    volumes:
+      - /Users/guang/mysql-data:/var/lib/mysql
+    environment:
+      MYSQL_DATABASE: meeting_room_booking_system
+      MYSQL_ROOT_PASSWORD: guang
+    networks:
+      - common-network
+  # 指定挂载的 volume 数据卷，以及 MYSQL_DATABASE（自动创建的 database） 和 MYSQL_ROOT_PASSWORD（root 用户密码） 的环境变量
+  redis-container:
+    image: redis
+    volumes:
+      - /Users/guang/redis-data:/data
+    networks:
+      - common-network
+networks:
+  common-network:
+    driver: bridge

@@ -1,73 +1,57 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
-</p>
+## 项目需求
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+技术栈：前端是 antd + react + cra，后端是 nest + typeorm，数据库是 mysql + redis，API 文档用 swagger 生成，部署用 docker compose + pm2，网关使用 nginx。
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+数据库表有 8 个：用户表 users、会议室表 meeting_rooms、预订表 bookings、预订-参会者表 booking_attendees、角色表 roles、权限表 permissions、用户-角色表 user_roles、角色-权限表 role_permissions。
 
-## Description
+模块有 4 个：用户管理模块、会议室管理模块、预订管理模块、统计管理模块。
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+角色有两个：普通用户、管理员，各自拥有的权限按照用例图来。使用 RBAC 来控制接口访问权限。
 
-## Installation
+## 项目开发
 
-```bash
-$ npm install
-```
+### 1.用户管理模块-用户注册
 
-## Running the app
+创建了 User、Role、Permission 的 entity，通过 typeorm 的自动建表功能，在数据库创建了对应的 3 个表和 2 个中间表。
 
-```bash
-# development
-$ npm run start
+引入了 nodemailer 来发邮件，如果是线上可以买阿里云或者其他平台的邮件推送服务。
 
-# watch mode
-$ npm run start:dev
+实现了 /user/register 和 /user/register-captcha 两个接口。
 
-# production mode
-$ npm run start:prod
-```
+/user/register-captcha 会向邮箱地址发送一个包含验证码的邮件，并在 redis 里存一份。
 
-## Test
+/user/register 会根据邮箱地址查询 redis 中的验证码，验证通过会把用户信息保存到表中。
 
-```bash
-# unit tests
-$ npm run test
+这样，注册功能就完成了。
 
-# e2e tests
-$ npm run test:e2e
+### 2.用户管理模块-配置拆分、登录认证鉴权
 
-# test coverage
-$ npm run test:cov
-```
+实现了配置抽离、基于 jwt 登录、鉴权功能。
 
-## Support
+配置抽离使用 @nestjs/config 包，把配置放在 src 下的 .env 文件里，然后代码里从 configService 读取配置。
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+这样可以配置 nest-cli.json 的 assets 和 watchAssets 来自动把 env 文件复制到 dist 目录下。
 
-## Stay in touch
+我们使用代码做的数据初始化，线上要删掉这个接口，用导出的 sql 文件来初始化。
 
-- Author - [Kamil Myśliwiec](https://kamilmysliwiec.com)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+登录成功之后，返回 access_token、refresh_token 还有用户信息、roles、permissions 等。
 
-## License
+并支持使用 refreshToken 来刷新 token。
 
-Nest is [MIT licensed](LICENSE).
+之后使用 LoginGuard、PermissionGuard 来做登录和权限的鉴权，根据 handler 上的 metadata 来确定要不要做鉴权、需要什么权限。
+
+我们还封装了几个自定义装饰器，用于方便的设置 metadata，从 request 取数据注入 handler。
+
+至此，注册、登录、鉴权、配置抽离等功能就完成了
+
+### 3.用户管理模块-interceptor、修改信息接口
+
+添加 interceptor 用来对响应格式做转换，改成 {code、message、data} 的格式，用到了 map 操作符。
+
+并且还用 interceptor 实现了接口访问的日志记录，用到 tap 操作符。
+
+然后实现了修改信息、修改密码的接口。
+
+这些流程都差不多，首先实现一个查询的接口用来回显数据，通过 vo 封装返回的数据。
+
+然后提交数据进行更新，用到的 userId 通过之前封装的 @UserInfo 装饰器从 request.user 来取。
